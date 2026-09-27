@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/database";
 
+// SES event publishing sets eventType; identity notifications set notificationType.
 interface SESMessage {
-  eventType: "send" | "delivery" | "bounce" | "complaint" | "reject";
+  eventType?: string;
+  notificationType?: string;
   mail: {
     messageId: string;
     timestamp: string;
@@ -37,15 +39,34 @@ interface SESMessage {
   };
 }
 
+const SNS_HOST = /^sns\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$/;
+
+async function confirmSubscription(subscribeUrl: unknown): Promise<boolean> {
+  if (typeof subscribeUrl !== "string") return false;
+
+  let url: URL;
+  try {
+    url = new URL(subscribeUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || !SNS_HOST.test(url.hostname)) return false;
+
+  const response = await fetch(url);
+  return response.ok;
+}
+
 async function handleSESWebhook(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Handle SNS confirmation
     if (body.Type === "SubscriptionConfirmation") {
-      console.log("SNS Subscription confirmation received");
-      // You would typically confirm the subscription here
-      return NextResponse.json({ message: "Subscription confirmed" });
+      if (await confirmSubscription(body.SubscribeURL)) {
+        console.log(`Confirmed SNS subscription for topic ${body.TopicArn}`);
+        return NextResponse.json({ message: "Subscription confirmed" });
+      }
+      console.warn("Rejected SNS subscription confirmation with an unexpected SubscribeURL");
+      return NextResponse.json({ error: "Invalid SubscribeURL" }, { status: 400 });
     }
 
     // Handle SNS notification
@@ -68,6 +89,8 @@ async function handleSESWebhook(req: NextRequest) {
 }
 
 async function processSESEvent(message: SESMessage) {
+  const eventType = (message.eventType ?? message.notificationType ?? "unknown").toLowerCase();
+
   try {
     // Find the email log by SES message ID
     const emailResult = await query(
@@ -82,19 +105,13 @@ async function processSESEvent(message: SESMessage) {
       return;
     }
 
-    const emailLog = {
-      ...emailResult.rows[0],
-      to_emails: JSON.parse(emailResult.rows[0].to_emails || "[]"),
-      cc_emails: JSON.parse(emailResult.rows[0].cc_emails || "[]"),
-      bcc_emails: JSON.parse(emailResult.rows[0].bcc_emails || "[]"),
-      attachments: JSON.parse(emailResult.rows[0].attachments || "[]"),
-    };
+    const emailLog = emailResult.rows[0];
 
     // Update email status based on event type
     let newStatus = emailLog.status;
     let errorMessage = null;
 
-    switch (message.eventType) {
+    switch (eventType) {
       case "delivery":
         newStatus = "delivered";
         break;
@@ -128,11 +145,11 @@ async function processSESEvent(message: SESMessage) {
     await query(
       `INSERT INTO webhook_events (email_log_id, event_type, event_data, processed)
        VALUES ($1, $2, $3, $4)`,
-      [emailLog.id, message.eventType, JSON.stringify(message), true]
+      [emailLog.id, eventType, JSON.stringify(message), true]
     );
 
     console.log(
-      `Processed ${message.eventType} event for email ${emailLog.id}`
+      `Processed ${eventType} event for email ${emailLog.id}`
     );
   } catch (error) {
     console.error("Failed to process SES event:", error);
@@ -142,7 +159,7 @@ async function processSESEvent(message: SESMessage) {
       await query(
         `INSERT INTO webhook_events (email_log_id, event_type, event_data, processed)
          VALUES ($1, $2, $3, $4)`,
-        [null, message.eventType, JSON.stringify(message), false]
+        [null, eventType, JSON.stringify(message), false]
       );
     } catch (insertError) {
       console.error("Failed to create webhook event record:", insertError);

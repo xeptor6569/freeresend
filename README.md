@@ -1,103 +1,160 @@
 # FreeResend
 
-**A self-hosted, open-source alternative to Resend for sending transactional emails.**
+A self-hosted, Resend-compatible email API that sends through Amazon SES. It ships as a Docker Compose stack: the app, a Postgres database, and an optional HTTPS proxy.
 
-FreeResend allows you to host your own email service using Amazon SES and optionally Digital Ocean for DNS management. It provides a Resend-compatible API so you can use it as a drop-in replacement.
+This is a fork of [eibrahim/freeresend](https://github.com/eibrahim/freeresend) with the hosted-service marketing site, Kubernetes manifests, and Supabase leftovers removed.
 
-> 📰 **Stay updated**: Get the latest frontend development insights delivered weekly with [**Frontend Weekly**](https://www.frontendweekly.co/) - curated by the author of FreeResend!
+## What you need
 
-> 🧭 **Need a production rollout checklist?** FreeResend stays MIT-licensed and free to self-host. The optional [$12 Self-Hosted Launch Kit](https://www.freeresend.com/launch-kit) gives you a DNS, SES, webhook, smoke-test, and rollback checklist while supporting the project. You can also [buy it directly on Stripe](https://buy.stripe.com/4gMeVc3bdaJ20y7crTaMU00).
+- Docker with Docker Compose v2 (Docker Desktop on Windows/macOS, or Docker Engine on Linux)
+- An AWS account with SES enabled, and an IAM user's access key (see [AWS permissions](#aws-permissions))
+- A domain you can add DNS records to
 
-> 🔎 **Want a second set of eyes before launch?** The optional [$12 FreeResend Deployment Review](https://www.freeresend.com/deployment-review) is a narrow manual review of one self-hosted rollout plan. Stripe collects your deployment URL or GitHub issue and main SES/DNS concern. You can also [book it directly on Stripe](https://buy.stripe.com/3cIcN49zBcRagx5dvXaMU01).
+## Quick start
 
-> 📬 **Checking DNS before SES launch?** Run the free [Email DNS Readiness Checker](https://www.freeresend.com/tools/email-dns-checker) for SPF, DMARC, DKIM, and MX records before sending production traffic.
+1. Create the `.env` file. The setup script asks for your admin email and AWS keys, and generates the database password, JWT secret, and admin password.
 
-> 📨 **Need SES production access?** Use the free [SES Production Request Helper](https://www.freeresend.com/tools/ses-production-request-helper) to draft a reviewer-friendly request without sharing secrets or customer data.
+   Windows (PowerShell):
 
-## Features
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\setup.ps1
+   ```
 
-- 🚀 **100% Resend-compatible** - True drop-in replacement using environment variables
-- 🏠 **Self-hosted** - Full control over your email infrastructure
-- 📧 **Amazon SES integration** - Reliable email delivery with DKIM support
-- 🌐 **Automatic DNS setup** - Integration with Digital Ocean for DNS record creation
-- 🔐 **DKIM authentication** - Automatic DKIM key generation and DNS record creation
-- 🔑 **API key management** - Generate and manage multiple API keys per domain
-- 📊 **Email logging** - Track all sent emails with delivery status and logs
-- 🎯 **Domain verification** - Automated domain verification with SES
-- 🔒 **Secure** - JWT-based authentication and robust API key validation
-- 🐳 **Docker ready** - Containerized deployment with Docker Compose
-- 📝 **Comprehensive logging** - Detailed email logs with webhook support
+   Linux / macOS:
 
-## Quick Start
+   ```sh
+   sh setup.sh
+   ```
 
-### Prerequisites
+   Prefer to do it by hand? Copy `.env.example` to `.env` and fill in every empty value in the first four sections.
 
-- Node.js 18+
-- PostgreSQL database (local or hosted)
-- Amazon AWS account with SES access
-- Digital Ocean account (optional, for automatic DNS management)
+2. Start the stack:
 
-### Installation
+   ```sh
+   docker compose up -d --build
+   ```
 
-1. **Clone and install dependencies:**
+   The first build takes a few minutes. On startup the app waits for Postgres, creates or updates the database tables, and creates the admin user from `.env`.
 
-```bash
-git clone <your-repo>
-cd freeresend
-npm install
+3. Open <http://localhost:3000> and sign in with the admin email and password printed by the setup script.
+
+Check that everything is running:
+
+```sh
+docker compose ps
+docker compose logs -f app
+curl http://localhost:3000/api/health
 ```
 
-2. **Set up environment variables:**
+## Sending your first email
 
-```bash
-cp .env.local.example .env.local
+1. **Domains tab**: add your sending domain. FreeResend registers it with SES and shows the DNS records to create: SES verification TXT, three DKIM CNAMEs, SPF, DMARC, and MX. If `DO_API_TOKEN` is set and the domain's DNS is hosted on DigitalOcean, the records are created for you.
+2. Wait for DNS to propagate (usually 5 to 30 minutes), then click **Check Verification**. The **DNS Check** tab shows what public DNS currently returns.
+3. **API Keys tab**: create a key for the verified domain. Copy the full key (`frs_...`) from the success message; it is only shown once.
+4. Send:
+
+   ```sh
+   curl -X POST http://localhost:3000/api/emails \
+     -H "Authorization: Bearer frs_your_key" \
+     -H "Content-Type: application/json" \
+     -d '{"from":"hello@yourdomain.com","to":["you@example.com"],"subject":"Hello","html":"<p>It works</p>"}'
+   ```
+
+New AWS accounts are in the **SES sandbox**: you can only send to addresses you have verified in the SES console. The **SES Access** tab drafts the production access request to send to AWS.
+
+### Using the Resend SDK
+
+Point the official [Resend Node.js SDK](https://github.com/resend/resend-node) at your server with an environment variable and use your FreeResend key:
+
+```sh
+RESEND_BASE_URL=https://mail.yourdomain.com/api
 ```
 
-Edit `.env.local` with your configuration:
+```js
+import { Resend } from "resend";
 
-```env
-# Next.js Configuration
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=your-super-secret-jwt-key-here
-
-# Database Configuration (PostgreSQL)
-DATABASE_URL=postgresql://username:password@hostname:port/database
-
-# AWS SES Configuration
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-
-# Digital Ocean API Configuration (optional)
-DO_API_TOKEN=your-digitalocean-api-token
-
-# Application Configuration
-ADMIN_EMAIL=admin@yourdomain.com
-ADMIN_PASSWORD=your-secure-admin-password
+const resend = new Resend("frs_your_key");
+await resend.emails.send({
+  from: "hello@yourdomain.com",
+  to: ["you@example.com"],
+  subject: "Hello",
+  html: "<p>It works</p>",
+});
 ```
 
-3. **Set up the database:**
+## Configuration
 
-In your Supabase SQL editor, run the contents of `database.sql` to create all necessary tables.
+All settings live in `.env`. After editing it, run `docker compose up -d` to apply them.
 
-4. **Start the development server:**
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Yes | Dashboard login. Changing `ADMIN_PASSWORD` and restarting resets the password. |
+| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Yes | SES credentials. The app starts without them, but domains and sending will fail. |
+| `JWT_SECRET` | Yes | Signs dashboard sessions. Changing it signs everyone out. |
+| `POSTGRES_PASSWORD` | Yes | Set once. Postgres keeps the original password in its data volume, so changing it later breaks the connection. |
+| `DO_API_TOKEN` | No | DigitalOcean token with read/write access to domains, for automatic DNS records. |
+| `APP_PORT` | No | Host port, default `3000`. Use `127.0.0.1:3000` to only allow access through the HTTPS proxy. |
+| `APP_DOMAIN` | No | Public hostname for the HTTPS proxy. |
+| `DATABASE_URL`, `DATABASE_SSL` | No | Use an external Postgres instead of the bundled one. |
 
-```bash
-npm run dev
+## HTTPS and public access
+
+To use FreeResend from other servers, and to receive SES bounce and complaint notifications, it needs a public HTTPS address. The stack includes an optional [Caddy](https://caddyserver.com/) proxy that gets a Let's Encrypt certificate automatically.
+
+1. Point a DNS A/AAAA record (for example `mail.yourdomain.com`) at the server, and open ports 80 and 443.
+2. In `.env`, set `APP_DOMAIN=mail.yourdomain.com` and `APP_PORT=127.0.0.1:3000`.
+3. Start with the `https` profile:
+
+   ```sh
+   docker compose --profile https up -d
+   ```
+
+Already running a reverse proxy (Traefik, nginx, Caddy)? Skip the profile and proxy to port 3000.
+
+### Bounce and complaint webhooks
+
+Delivery, bounce, and complaint events update the status in the Email Logs tab. They reach FreeResend through Amazon SNS:
+
+1. In the SNS console, create a Standard topic in the same region as SES.
+2. Add a subscription to the topic with protocol **HTTPS** and endpoint `https://mail.yourdomain.com/api/webhooks/ses`. FreeResend confirms the subscription automatically.
+3. In the SES console, open **Identities**, then your domain, then the **Notifications** tab. Set that topic for bounce, complaint, and delivery feedback.
+
+## Operations
+
+**Update to a newer version**
+
+```sh
+git pull
+docker compose up -d --build
 ```
 
-Visit `http://localhost:3000` and log in with your admin credentials.
+Schema changes are applied automatically on startup.
 
-## AWS SES Setup
+**Back up and restore the database**
 
-1. **Verify your AWS account for SES:**
+```sh
+docker compose exec -T postgres pg_dump -U freeresend freeresend > backup.sql
+docker compose exec -T postgres psql -U freeresend freeresend < backup.sql
+```
 
-   - Go to AWS SES console
-   - Move out of sandbox mode if needed
+**Stop, or delete everything**
 
-- Configure sending limits
+```sh
+docker compose down        # stop; data is kept in the postgres_data volume
+docker compose down -v     # stop and delete all data, including logs and API keys
+```
 
-2. **Create IAM user with SES permissions:**
+**Use an external Postgres** (Postgres 13 or newer)
+
+Set `DATABASE_URL=postgresql://user:password@host:5432/dbname` in `.env`, plus `DATABASE_SSL=true` if the provider requires SSL. URL-encode special characters in the password. Then start only the app:
+
+```sh
+docker compose up -d --no-deps app
+```
+
+## AWS permissions
+
+The IAM user needs these SES actions:
 
 ```json
 {
@@ -121,335 +178,62 @@ Visit `http://localhost:3000` and log in with your admin credentials.
 }
 ```
 
-> **Note**: The DKIM permissions (`ses:VerifyDomainDkim`, `ses:GetIdentityDkimAttributes`) are required for automatic DKIM setup.
+The optional **SMTP credentials** feature on the Domains tab creates a dedicated IAM user per domain. That also requires `iam:CreateUser`, `iam:DeleteUser`, `iam:CreateAccessKey`, `iam:DeleteAccessKey`, `iam:ListAccessKeys`, `iam:AttachUserPolicy`, and `iam:DetachUserPolicy`. Leave these out if you only use the HTTP API.
 
-## Digital Ocean DNS Setup (Optional)
+## API reference
 
-If you want automatic DNS record creation:
+Emails (API key auth, `Authorization: Bearer frs_...`):
 
-1. Create a Digital Ocean API token with read/write access
-2. Add your domains to Digital Ocean's DNS management
-3. Set the `DO_API_TOKEN` environment variable
+- `POST /api/emails` - send an email (Resend-compatible)
+- `GET /api/emails/logs` - list sent emails (also accepts a dashboard session)
 
-## Using FreeResend with Resend SDK
+Dashboard (session auth from `POST /api/auth/login`):
 
-FreeResend is **100% compatible** with the [Resend Node.js SDK](https://github.com/resend/resend-node)!
+- `GET /api/auth/me`
+- `GET /api/emails/{id}` - one email with its delivery events
+- `GET|POST /api/domains`, `GET|DELETE /api/domains/{id}`
+- `POST /api/domains/{id}/verify`, `POST /api/domains/{id}/retry-dns`
+- `POST|DELETE /api/domains/{id}/smtp`
+- `GET|POST /api/api-keys`, `PUT|DELETE /api/api-keys/{id}`
+- `POST /api/tools/email-dns-checker`
 
-### Method 1: Environment Variable (Recommended)
+Other:
 
-Set the `RESEND_BASE_URL` environment variable:
-
-```bash
-export RESEND_BASE_URL="https://your-freeresend-domain.com/api"
-```
-
-Then use Resend exactly as before:
-
-```javascript
-import { Resend } from "resend";
-
-// No changes needed - FreeResend API key works with Resend SDK!
-const resend = new Resend("your-freeresend-api-key");
-
-const { data, error } = await resend.emails.send({
-  from: "onboarding@yourdomain.com",
-  to: ["user@example.com"],
-  subject: "Hello World",
-  html: "<strong>it works!</strong>",
-});
-```
-
-### Method 2: Direct API
-
-```javascript
-const response = await fetch("https://your-freeresend-domain.com/api/emails", {
-  method: "POST",
-  headers: {
-    Authorization: "Bearer your-freeresend-api-key",
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    from: "onboarding@yourdomain.com",
-    to: ["user@example.com"],
-    subject: "Hello World",
-    html: "<strong>it works!</strong>",
-  }),
-});
-```
-
-## API Endpoints
-
-### Authentication
-
-- `POST /api/auth/login` - Login with email/password
-- `GET /api/auth/me` - Get current user info
-
-### Domains
-
-- `GET /api/domains` - List all domains
-- `POST /api/domains` - Add new domain
-- `DELETE /api/domains/{id}` - Delete domain
-- `POST /api/domains/{id}/verify` - Check domain verification
-
-### API Keys
-
-- `GET /api/api-keys` - List API keys
-- `POST /api/api-keys` - Create new API key
-- `DELETE /api/api-keys/{id}` - Delete API key
-
-### Emails (Resend-compatible)
-
-- `POST /api/emails` - Send email
-- `GET /api/emails/logs` - Get email logs
-- `GET /api/emails/{id}` - Get specific email
-
-### Webhooks
-
-- `POST /api/webhooks/ses` - SES webhook endpoint
-
-## Domain Setup Process
-
-1. **Add domain** in the FreeResend dashboard
-2. **DNS Records** will be automatically created (if Digital Ocean is configured) or displayed for manual setup:
-
-   - **TXT record** - `_amazonses.yourdomain.com` for SES domain verification
-   - **MX record** - `yourdomain.com` for receiving emails via SES
-   - **SPF record** - `yourdomain.com` for sender policy framework
-   - **DMARC record** - `_dmarc.yourdomain.com` for email authentication policy
-   - **DKIM records** - 3 CNAME records for `*._domainkey.yourdomain.com` for email signing
-
-3. **Verify domain** - Click "Check Verification" once DNS records are live
-4. **Create API key** - Generate API keys for your verified domain
-5. **Start sending** - Use the API key with FreeResend or Resend SDK
-
-## Testing Your Setup
-
-FreeResend includes test scripts to verify your installation:
-
-### Quick Test
-
-```bash
-# Test with cURL (update variables in script first)
-./test-curl.sh
-```
-
-### Comprehensive Test
-
-```bash
-# Test direct API + Resend SDK compatibility + Email logs
-node test-email.js
-```
-
-Both scripts will:
-
-- ✅ Send test emails using your API key
-- ✅ Verify Resend SDK compatibility
-- ✅ Check email logs functionality
-- 📧 Send actual emails to your inbox for verification
+- `GET /api/health` - returns 503 when the database is unreachable
+- `POST /api/webhooks/ses` - SNS notifications from SES
 
 ## Troubleshooting
 
-### Common Issues
+**`docker compose up` fails with "POSTGRES_PASSWORD is not set"**: there is no `.env` next to `docker-compose.yml`. Run the setup script.
 
-**Q: Getting "Invalid API key" errors**
+**The app container keeps restarting**: run `docker compose logs app`. The first error line names the missing setting or the database problem.
 
-- ✅ Make sure you copied the **complete API key** from the green success message (not the masked version from the table)
-- ✅ API keys have format: `frs_keyId_secretPart` (3 parts separated by underscores)
+**"password authentication failed" after editing `.env`**: `POSTGRES_PASSWORD` changed after the database was created. Put the old value back, or run `docker compose down -v` to start over (deletes all data).
 
-**Q: Digital Ocean DNS automation not working**
+**Forgot the admin password**: set a new `ADMIN_PASSWORD` in `.env` and run `docker compose up -d`.
 
-- ✅ Verify your DO API token has **Read & Write** access to **Domains** and **Domain Records**
-- ✅ Ensure your domain is added to Digital Ocean's DNS management
-- ✅ Test token: `curl -H "Authorization: Bearer YOUR_TOKEN" https://api.digitalocean.com/v2/domains`
+**Domain stuck on pending**: check the records with the **DNS Check** tab, or `dig TXT _amazonses.yourdomain.com`. Propagation can take up to an hour.
 
-**Q: Domain verification stuck at "pending"**
+**"Invalid API key"**: use the complete key from the creation message (`frs_<id>_<secret>`), not the masked value in the table.
 
-- ✅ DNS propagation takes 5-30 minutes - be patient!
-- ✅ Check DNS records: `dig TXT _amazonses.yourdomain.com`
-- ✅ Ensure all DNS records are created properly
-
-**Q: AWS SES permissions error**
-
-- ✅ Make sure your IAM policy includes **DKIM permissions**: `ses:VerifyDomainDkim` and `ses:GetIdentityDkimAttributes`
-- ✅ Verify your AWS account is out of SES sandbox mode
-
-**Q: Resend SDK not working with FreeResend**
-
-- ✅ Set environment variable: `export RESEND_BASE_URL="https://your-domain.com/api"`
-- ✅ Use FreeResend API key (starts with `frs_`), not Resend API key
-
-## Production Deployment
-
-### Docker (Recommended)
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-### Environment Setup
-
-- Use a production database (Supabase Pro or self-hosted PostgreSQL)
-- Set up proper SSL certificates
-- Configure firewall rules
-- Set up monitoring and logging
-- Configure SES with proper sending limits
-
-### Vercel Deployment
-
-FreeResend can be deployed on Vercel with some configuration:
-
-1. Connect your GitHub repo to Vercel
-2. Set environment variables in Vercel dashboard
-3. Deploy
-
-Note: Webhook endpoints might need special configuration for Vercel's serverless environment.
+**Emails only reach some recipients**: your SES account is still in the sandbox.
 
 ## Development
 
-```bash
-# Install dependencies
+```sh
 npm install
-
-# Start development server
+docker compose up -d postgres        # or point DATABASE_URL at any Postgres
 npm run dev
+```
 
-# Build for production
-npm run build
+For `npm run dev`, put the settings in `.env.local`: `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, the AWS keys, and `DATABASE_URL`. The bundled Postgres port is not published by default. To use it from the host, add `ports: ["5432:5432"]` to the `postgres` service.
 
-# Start production server
-npm start
-
-# Lint code
+```sh
 npm run lint
+npm test
+FRS_API_KEY=frs_... FROM_EMAIL=hello@yourdomain.com TO_EMAIL=you@example.com node test-email.js
 ```
-
-## Repository Structure
-
-```
-freeresend/
-├── src/
-│   ├── app/                 # Next.js App Router
-│   │   ├── api/            # API routes
-│   │   │   ├── auth/       # Authentication endpoints
-│   │   │   ├── domains/    # Domain management
-│   │   │   ├── api-keys/   # API key management
-│   │   │   ├── emails/     # Email sending & logs
-│   │   │   └── webhooks/   # SES webhook handlers
-│   │   ├── globals.css     # Global styles
-│   │   ├── layout.tsx      # Root layout
-│   │   └── page.tsx        # Main dashboard page
-│   ├── components/         # React components
-│   │   ├── Dashboard.tsx   # Main dashboard
-│   │   ├── LoginForm.tsx   # Authentication
-│   │   └── *Tab.tsx        # Tab components
-│   ├── contexts/           # React contexts
-│   └── lib/                # Core business logic
-│       ├── supabase.ts     # Database client
-│       ├── auth.ts         # Authentication logic
-│       ├── ses.ts          # Amazon SES integration
-│       ├── digitalocean.ts # DNS automation
-│       ├── domains.ts      # Domain management
-│       ├── api-keys.ts     # API key logic
-│       └── middleware.ts   # API middleware
-├── database.sql            # Database schema
-├── docker-compose.yml      # Development setup
-├── test-email.js          # Comprehensive test script
-├── test-curl.sh           # Quick cURL test
-└── README.md              # This file
-```
-
-## Contributing
-
-We welcome contributions! Here's how to get started:
-
-### Development Setup
-
-1. **Fork the repository** on GitHub
-2. **Clone your fork**: `git clone https://github.com/eibrahim/freeresend.git`
-3. **Install dependencies**: `npm install`
-4. **Set up environment** following the Quick Start guide above
-5. **Run tests**: `node test-email.js`
-6. **Start development**: `npm run dev`
-
-### Contributing Guidelines
-
-- 🐛 **Bug fixes** - Always welcome with test cases
-- ✨ **New features** - Open an issue first to discuss
-- 📝 **Documentation** - Improvements always appreciated
-- 🧪 **Tests** - Required for new features
-- 💻 **Code style** - Follow existing patterns
-
-### Pull Request Process
-
-1. Create a feature branch: `git checkout -b feature/your-feature-name`
-2. Make your changes with clear, descriptive commits
-3. Add tests for new functionality
-4. Update documentation if needed
-5. Submit a pull request with a clear description
-
-### Reporting Issues
-
-When reporting bugs, please include:
-
-- Your environment (Node.js version, OS, etc.)
-- Steps to reproduce the issue
-- Expected vs actual behavior
-- Relevant error messages or logs
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Support
-
-- 📖 **Documentation**: Check SETUP.md for detailed setup instructions
-- 🧭 **Launch Kit**: Optional [$12 self-hosted deployment checklist](https://www.freeresend.com/launch-kit)
-- 🔎 **Deployment Review**: Optional [$12 one-page review of your SES, DNS, webhook, and launch-risk plan](https://www.freeresend.com/deployment-review)
-- 📬 **DNS Checker**: Free [email DNS readiness checker](https://www.freeresend.com/tools/email-dns-checker) for SPF, DMARC, DKIM, and MX records
-- 📨 **SES Request Helper**: Free [SES production access request draft helper](https://www.freeresend.com/tools/ses-production-request-helper) for a safe, public-data-only AWS support request
-- 🐛 **Issues**: Report bugs via [GitHub Issues](https://github.com/eibrahim/freeresend/issues)
-- 💡 **Feature Requests**: Suggest improvements via GitHub Issues
-- 🚀 **Professional Support**: Custom development and enterprise support available via [EliteCoders](https://elitecoders.co/)
-
-## Roadmap
-
-- [ ] Email templates support
-- [ ] Webhook retry mechanism
-- [ ] Email analytics dashboard
-- [ ] Multi-user support
-- [ ] Email scheduling
-- [ ] SMTP server support
-- [ ] Email campaign management
-
----
-
-## About the Author
-
-FreeResend is built and maintained by **[Emad Ibrahim](https://x.com/eibrahim)** - a software engineer and entrepreneur passionate about creating developer tools and open-source solutions.
-
-### 👨‍💻 **Connect with Emad**
-
-- 🐦 **Twitter**: [@eibrahim](https://x.com/eibrahim) - Follow for updates on FreeResend and web development insights
-- 📧 **Email**: [eibrahim@gmail.com](mailto:eibrahim@gmail.com)
-- 📰 **Newsletter**: [Frontend Weekly](https://www.frontendweekly.co/) - The best frontend development articles delivered weekly
-- 💼 **Professional Services**: Custom development and enterprise support via [EliteCoders](https://elitecoders.co/)
-
-### 🚀 **Need Custom Development?**
-
-If you need help with:
-
-- 🏗️ **Custom email infrastructure** modifications
-- 🚀 **Enterprise deployments** and scaling
-- 🔧 **Integration** with your existing systems
-- 🎯 **Feature development** beyond the roadmap
-
-**[Get in touch with EliteCoders →](https://elitecoders.co/)**
-
-_Building powerful software solutions for businesses worldwide_ 🌎
+MIT. See [LICENSE](LICENSE). Originally created by [Emad Ibrahim](https://github.com/eibrahim/freeresend).

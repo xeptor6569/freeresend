@@ -4,14 +4,13 @@ import { FormEvent, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  ExternalLink,
   Info,
   Loader2,
   MailCheck,
   Search,
   XCircle,
 } from "lucide-react";
-import { deploymentReview, launchKit } from "@/config/launch-kit";
+import { api } from "@/lib/api";
 import type { EmailDnsAssessment, EmailDnsCheck, EmailDnsStatus } from "@/lib/email-dns-readiness";
 
 const statusStyles: Record<EmailDnsStatus, { label: string; icon: typeof CheckCircle2; className: string }> = {
@@ -103,18 +102,7 @@ export default function EmailDnsChecker() {
     setResult(null);
 
     try {
-      const response = await fetch("/api/tools/email-dns-checker", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, dkimSelector }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "DNS check failed.");
-      }
-
-      setResult(payload as EmailDnsAssessment);
+      setResult(await api.checkEmailDns(domain, dkimSelector));
     } catch (caught) {
       setError((caught as Error).message);
     } finally {
@@ -123,17 +111,17 @@ export default function EmailDnsChecker() {
   }
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <section>
       <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
             <MailCheck className="h-6 w-6" />
           </div>
-          <h1 className="text-3xl font-bold leading-tight text-gray-900 sm:text-4xl">
+          <h2 className="text-2xl font-bold leading-tight text-gray-900">
             Email DNS readiness checker
-          </h1>
+          </h2>
           <p className="mt-4 leading-7 text-gray-600">
-            Check SPF, DMARC, MX, and one DKIM selector before moving a FreeResend or Amazon SES domain into production.
+            Check SPF, DMARC, MX, and one DKIM selector before moving an Amazon SES domain into production.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-7 space-y-4">
@@ -194,7 +182,7 @@ export default function EmailDnsChecker() {
                 <h2 className="mt-2 text-2xl font-bold text-gray-900">{resultTitle}</h2>
                 <p className="mt-2 leading-7 text-gray-600">
                   {result?.summary ??
-                    "Run the checker to see the records that most often block SES launches, then use the launch kit or review offer for the remaining rollout work."}
+                    "Run the checker to see the records that most often block SES launches."}
                 </p>
               </div>
               {result ? <StatusPill status={result.overallStatus} /> : null}
@@ -227,34 +215,6 @@ export default function EmailDnsChecker() {
               ))}
             </div>
           )}
-
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
-            <h2 className="text-xl font-bold text-emerald-950">Need a production pass?</h2>
-            <p className="mt-2 leading-7 text-emerald-900">
-              The checker only sees public DNS. The {deploymentReview.price} Deployment Review covers SES sandbox status,
-              region choice, DKIM alignment, webhook gaps, and the next launch fixes from your deployment URL.
-            </p>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <a
-                href={deploymentReview.checkoutUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-emerald-700"
-              >
-                <span>Book review for {deploymentReview.price}</span>
-                <ExternalLink className="h-4 w-4" />
-              </a>
-              <a
-                href={launchKit.checkoutUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-white px-5 py-3 font-semibold text-emerald-800 transition-colors hover:bg-emerald-100"
-              >
-                <span>Buy launch kit</span>
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </div>
-          </div>
         </div>
       </div>
     </section>

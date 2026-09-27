@@ -1,4 +1,7 @@
 -- FreeResend Database Schema
+--
+-- Applied automatically every time the app starts (see src/lib/bootstrap.ts),
+-- so every statement must be safe to run repeatedly.
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -73,22 +76,6 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Waitlist signups table
-CREATE TABLE IF NOT EXISTS waitlist_signups (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  estimated_volume INTEGER,
-  current_provider VARCHAR(100),
-  referral_source VARCHAR(100),
-  user_agent TEXT,
-  ip_address INET,
-  utm_source VARCHAR(100),
-  utm_medium VARCHAR(100),
-  utm_campaign VARCHAR(100),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_domains_user_id ON domains(user_id);
 CREATE INDEX IF NOT EXISTS idx_domains_domain ON domains(domain);
@@ -101,9 +88,6 @@ CREATE INDEX IF NOT EXISTS idx_email_logs_message_id ON email_logs(message_id);
 CREATE INDEX IF NOT EXISTS idx_email_logs_created_at ON email_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_webhook_events_email_log_id ON webhook_events(email_log_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_events_processed ON webhook_events(processed);
-CREATE INDEX IF NOT EXISTS idx_waitlist_signups_email ON waitlist_signups(email);
-CREATE INDEX IF NOT EXISTS idx_waitlist_signups_created_at ON waitlist_signups(created_at);
-CREATE INDEX IF NOT EXISTS idx_waitlist_signups_utm_source ON waitlist_signups(utm_source);
 
 -- Trigger function to automatically update updated_at timestamps
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -114,27 +98,19 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create triggers for updated_at automation
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users 
+-- Triggers for updated_at automation
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_domains_updated_at BEFORE UPDATE ON domains 
+DROP TRIGGER IF EXISTS update_domains_updated_at ON domains;
+CREATE TRIGGER update_domains_updated_at BEFORE UPDATE ON domains
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_api_keys_updated_at BEFORE UPDATE ON api_keys 
+DROP TRIGGER IF EXISTS update_api_keys_updated_at ON api_keys;
+CREATE TRIGGER update_api_keys_updated_at BEFORE UPDATE ON api_keys
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_email_logs_updated_at BEFORE UPDATE ON email_logs 
+DROP TRIGGER IF EXISTS update_email_logs_updated_at ON email_logs;
+CREATE TRIGGER update_email_logs_updated_at BEFORE UPDATE ON email_logs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_waitlist_signups_updated_at BEFORE UPDATE ON waitlist_signups 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Initial data: Create default admin user (password: changeme123)
--- Note: Change this password after first login!
-INSERT INTO users (email, password_hash, name) 
-VALUES (
-  'admin@freeresend.com', 
-  '$2b$10$rHOuGCOB2xzvf1YqnHjlUuB9AKnp.xeL0JOV5E7zlM1QIFhW7qYGS', 
-  'Admin User'
-) ON CONFLICT (email) DO NOTHING;

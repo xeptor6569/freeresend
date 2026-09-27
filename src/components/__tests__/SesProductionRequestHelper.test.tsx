@@ -16,9 +16,5 @@ describe("SesProductionRequestHelper", () => {
     expect(screen.getByText(/request production access for amazon ses in us-east-1/i)).toBeInTheDocument();
     expect(screen.getByText(/sending domain: example.com/i)).toBeInTheDocument();
     expect(screen.getAllByText(/password resets and account notifications/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: /book deployment review/i })).toHaveAttribute(
-      "href",
-      "https://buy.stripe.com/3cIcN49zBcRagx5dvXaMU01"
-    );
   });
 });

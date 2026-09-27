@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promises as dns } from "node:dns";
+import { verifyJWT } from "@/lib/auth";
 import {
   analyzeEmailDnsRecords,
   normalizeDkimSelector,
@@ -51,6 +52,11 @@ async function resolveCname(name: string, errors: string[]): Promise<string[]> {
 }
 
 export async function POST(request: NextRequest) {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ") || !verifyJWT(authHeader.substring(7))) {
+    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+  }
+
   let body: RequestBody;
   try {
     body = (await request.json()) as RequestBody;

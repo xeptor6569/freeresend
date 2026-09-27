@@ -5,8 +5,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import DomainsTab from "./DomainsTab";
 import ApiKeysTab from "./ApiKeysTab";
 import EmailLogsTab from "./EmailLogsTab";
+import EmailDnsChecker from "./EmailDnsChecker";
+import SesProductionRequestHelper from "./SesProductionRequestHelper";
 
-type Tab = "domains" | "apikeys" | "logs";
+type Tab = "domains" | "apikeys" | "logs" | "dns" | "ses";
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -27,6 +29,16 @@ export default function Dashboard() {
       id: "logs" as Tab,
       name: "Email Logs",
       description: "View sent email history",
+    },
+    {
+      id: "dns" as Tab,
+      name: "DNS Check",
+      description: "Check SPF, DMARC, DKIM, and MX records",
+    },
+    {
+      id: "ses" as Tab,
+      name: "SES Access",
+      description: "Draft an SES production access request",
     },
   ];
 
@@ -82,54 +94,23 @@ export default function Dashboard() {
           {activeTab === "domains" && <DomainsTab />}
           {activeTab === "apikeys" && <ApiKeysTab />}
           {activeTab === "logs" && <EmailLogsTab />}
+          {activeTab === "dns" && <EmailDnsChecker />}
+          {activeTab === "ses" && <SesProductionRequestHelper />}
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-gray-200 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center text-sm text-gray-500">
-            <div>
-              <span>Built with ❤️ by </span>
-              <a
-                href="https://x.com/eibrahim"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 font-medium"
-              >
-                Emad Ibrahim
-              </a>
-              <span className="mx-2">•</span>
-              <a
-                href="https://www.frontendweekly.co/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 font-medium"
-              >
-                Frontend Weekly
-              </a>
-              <span className="mx-2">•</span>
-              <a
-                href="https://www.elitesaas.dev/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 font-medium"
-              >
-                EliteSaaS
-              </a>
-            </div>
-            <div className="text-xs">
-              <span>Powered by EliteCoders - </span>
-              <a
-                href="https://elitecoders.co/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800 underline"
-              >
-                Get in touch
-              </a>
-            </div>
-          </div>
+        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 text-sm text-gray-500">
+          Based on{" "}
+          <a
+            href="https://github.com/eibrahim/freeresend"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 font-medium"
+          >
+            FreeResend
+          </a>{" "}
+          by Emad Ibrahim (MIT License)
         </div>
       </footer>
     </div>

@@ -6,12 +6,15 @@
  * This script tests email sending functionality using both:
  * 1. Direct API calls (curl equivalent)
  * 2. Resend package compatibility
+ *
+ * Usage:
+ *   FRS_API_KEY=frs_... FROM_EMAIL=hello@yourdomain.com TO_EMAIL=you@example.com node test-email.js
  */
 
-const API_BASE_URL = "http://localhost:3000";
-const API_KEY = "rev"; // Replace with your actual API key from FreeResend
-const FROM_EMAIL = "info@freeresend.com"; // Replace with your verified domain
-const TO_EMAIL = "eibrahim@gmail.com"; // Replace with your email address
+const API_BASE_URL = process.env.FRS_URL || "http://localhost:3000";
+const API_KEY = process.env.FRS_API_KEY || "";
+const FROM_EMAIL = process.env.FROM_EMAIL || "";
+const TO_EMAIL = process.env.TO_EMAIL || "";
 
 // Test 1: Direct API call
 async function testDirectAPI() {
@@ -137,22 +140,11 @@ async function runTests() {
   console.log("🚀 FreeResend Email Testing\n");
   console.log("=".repeat(50));
 
-  // Validate configuration
-  if (API_KEY === "YOUR_API_KEY_HERE") {
+  if (!API_KEY || !FROM_EMAIL || !TO_EMAIL) {
     console.log(
-      "❌ Please update API_KEY in this script with your actual API key from FreeResend"
+      "❌ Set FRS_API_KEY, FROM_EMAIL (on a verified domain) and TO_EMAIL. FRS_URL defaults to http://localhost:3000."
     );
-    return;
-  }
-
-  if (FROM_EMAIL === "test@freeresend.com") {
-    console.log("❌ Please update FROM_EMAIL with your verified domain email");
-    return;
-  }
-
-  if (TO_EMAIL === "your-email@example.com") {
-    console.log("❌ Please update TO_EMAIL with your actual email address");
-    return;
+    process.exit(1);
   }
 
   console.log(`📧 From: ${FROM_EMAIL}`);

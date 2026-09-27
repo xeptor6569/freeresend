@@ -1,219 +1,96 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for AI coding agents working in this repository.
 
 ## Project Overview
 
-FreeResend is a self-hosted, open-source alternative to Resend for sending transactional emails. It provides 100% Resend-compatible API using Amazon SES for email delivery, with optional Digital Ocean DNS automation for domain setup.
+FreeResend is a self-hosted, Resend-compatible email API that sends through Amazon SES, with optional DigitalOcean DNS automation. This fork is deployed only as a Docker Compose stack (app + Postgres + optional Caddy HTTPS proxy). There is no Kubernetes, Vercel, Supabase, or hosted marketing site; do not reintroduce them.
 
 **Key Technologies:**
-- Next.js 15 (App Router)
+- Next.js 15 (App Router, `output: 'standalone'`)
 - TypeScript
-- PostgreSQL (direct connection, migrated from Supabase)
-- Amazon SES SDK v3
-- Digital Ocean API
-- JWT authentication
-- bcryptjs for password hashing
+- PostgreSQL via `pg` (connection pool in `src/lib/database.ts`)
+- Amazon SES and IAM SDK v3
+- DigitalOcean API (axios)
+- JWT sessions (`jsonwebtoken`) and bcryptjs
 
-## Development Commands
+## Commands
 
 ```bash
+# Deployment
+./setup.sh                      # or: powershell -ExecutionPolicy Bypass -File .\setup.ps1
+docker compose up -d --build
+docker compose logs -f app
+
 # Development
-npm run dev         # Start development server with Turbopack
+npm run dev
+npm run build
+npm run lint
+npx tsc --noEmit
+npm test
 
-# Production
-npm run build       # Build for production
-npm start           # Start production server
-
-# Code Quality
-npm run lint        # Run ESLint
-
-# Testing
-node test-email.js  # Comprehensive email testing (API + Resend SDK)
-./test-curl.sh      # Quick cURL-based API test
+# End-to-end smoke tests (need a verified domain and API key)
+FRS_API_KEY=frs_... FROM_EMAIL=... TO_EMAIL=... node test-email.js
+FRS_API_KEY=frs_... FROM_EMAIL=... TO_EMAIL=... ./test-curl.sh
 ```
 
-## Architecture Overview
+## Architecture
 
-### Core Structure
-- **API Layer**: Next.js App Router API routes (`/src/app/api/`)
-- **Business Logic**: Modular libraries in `/src/lib/`
-- **Database**: Direct PostgreSQL with connection pooling
-- **Frontend**: React dashboard components in `/src/components/`
+- **API routes**: `src/app/api/` (each route currently does its own auth and CORS inline)
+- **Business logic**: `src/lib/`
+- **Dashboard UI**: `src/app/page.tsx` renders `LoginForm` or `Dashboard`; tabs live in `src/components/`
+- **Startup**: `src/instrumentation.ts` calls `src/lib/bootstrap.ts`, which validates env vars, waits for Postgres, applies `database.sql`, and creates/updates the admin user from `ADMIN_EMAIL`/`ADMIN_PASSWORD`. The process exits if startup fails.
 
-### Database Architecture
-The project uses **direct PostgreSQL** (not Supabase) with:
-- Connection pooling via `pg` package
-- Transaction support
-- Auto-updating timestamps via triggers
-- UUID primary keys
-- JSONB fields for flexible data (DNS records, email arrays)
+### Database
 
-**Key Tables:**
-- `users` - Admin user accounts
-- `domains` - Email sending domains with SES integration
-- `api_keys` - API authentication keys (bcrypt hashed)
-- `email_logs` - All sent email records with delivery status
-- `webhook_events` - SES delivery event processing
+- Schema lives in `database.sql` and is applied on every startup inside a transaction guarded by an advisory lock. Every statement must be idempotent (`CREATE ... IF NOT EXISTS`, `DROP TRIGGER IF EXISTS` before `CREATE TRIGGER`). Target Postgres 13+.
+- Tables: `users`, `domains`, `api_keys`, `email_logs`, `webhook_events`.
+- JSONB columns come back from `pg` as parsed values; do not `JSON.parse` them.
+- Connection: `DATABASE_URL`, or `PGHOST`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` (used by docker-compose). `DATABASE_SSL=true` enables SSL without certificate verification.
 
-### Integration Architecture
-
-**Amazon SES Integration** (`/src/lib/ses.ts`):
-- Domain verification and DKIM setup
-- Email sending (simple and raw with attachments)
-- Configuration sets and webhook handling
-- Bounce/complaint processing
-
-**Digital Ocean DNS** (`/src/lib/digitalocean.ts`):
-- Automatic DNS record creation (TXT, MX, SPF, DMARC, DKIM)
-- Domain validation
-- Error handling and manual fallback
-
-**API Key System** (`/src/lib/api-keys.ts`):
-- Format: `frs_{keyId}_{secretPart}` 
-- bcrypt hashing with prefix for identification
-- Domain-scoped permissions
-
-## API Design Patterns
-
-### Resend Compatibility
-The project maintains **100% compatibility** with Resend SDK by:
-- Matching exact API endpoint structure (`/api/emails`)
-- Supporting same request/response formats
-- Using environment variable `RESEND_BASE_URL` for endpoint override
-
-### Authentication Flow
-1. **Admin Login**: JWT tokens via `/api/auth/login`
-2. **API Keys**: Bearer token authentication for email operations
-3. **Middleware**: `withAuth()` and `withApiKeyAuth()` helpers
-
-### Error Handling Pattern
-Consistent error responses with:
-```typescript
-{ error: "Error message", details?: "Additional info" }
-```
-
-## Key Development Patterns
-
-### Database Operations
-Always use the connection pool and transaction helpers:
 ```typescript
 import { query, transaction } from "@/lib/database";
 
-// Simple query
 const result = await query("SELECT * FROM users WHERE id = $1", [userId]);
 
-// Transaction
-const result = await transaction(async (client) => {
-  // Multiple operations
-  return result;
+await transaction(async (client) => {
+  // multiple statements
 });
 ```
 
-### API Route Structure
-Follow the established pattern in `/src/app/api/`:
-- Use proper HTTP methods (GET, POST, DELETE)
-- Apply authentication middleware
-- Return consistent JSON responses
-- Handle errors gracefully
+### Authentication
 
-### Component Organization
-- **Dashboard.tsx**: Main container with tab switching
-- **[Feature]Tab.tsx**: Individual feature components
-- **LoginForm.tsx**: Authentication handling
-- Use React hooks and context for state management
+- Dashboard: `POST /api/auth/login` returns a JWT signed with `JWT_SECRET`; the client stores it in localStorage and sends `Authorization: Bearer <jwt>`.
+- API: keys look like `frs_{keyId}_{secret}`, stored bcrypt-hashed with a prefix, scoped to one verified domain.
 
-## Environment Configuration
+### Integrations
 
-Required environment variables:
+- `src/lib/ses.ts`: domain verification, DKIM, configuration sets, sending (raw MIME when there are attachments).
+- `src/lib/smtp.ts`: per-domain IAM users for SMTP credentials (needs extra IAM permissions).
+- `src/lib/digitalocean.ts`: automatic DNS records when `DO_API_TOKEN` is set.
+- `src/app/api/webhooks/ses/route.ts`: SNS endpoint. Auto-confirms subscriptions from `sns.*.amazonaws.com`, accepts both SES event-publishing (`eventType`) and identity-notification (`notificationType`) payloads.
+- Dashboard tools: `EmailDnsChecker` (`POST /api/tools/email-dns-checker`, requires login) and `SesProductionRequestHelper` (client-only).
+
+## Conventions
+
+- Keep `POST /api/emails` request/response shapes compatible with Resend. The Resend SDK is pointed here with `RESEND_BASE_URL=https://host/api`.
+- Error responses: `{ error: "message", details?: ... }`.
+- New configuration must be added to `.env.example`, `docker-compose.yml` (`app.environment`), both setup scripts if it is generated, and the README configuration table.
+- Never hard-code credentials, personal emails, or third-party analytics.
+
+## Environment Variables
+
 ```bash
-# Database (PostgreSQL)
-DATABASE_URL=postgresql://...
-
-# AWS SES
+ADMIN_EMAIL=            # dashboard login; ADMIN_PASSWORD is re-applied on every start
+ADMIN_PASSWORD=
+JWT_SECRET=
 AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-
-# Digital Ocean (optional)
-DO_API_TOKEN=...
-
-# Security
-NEXTAUTH_SECRET=...
-
-# Admin Setup
-ADMIN_EMAIL=...
-ADMIN_PASSWORD=...
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+DO_API_TOKEN=           # optional
+POSTGRES_PASSWORD=      # compose only; fixed after first start
+APP_PORT=3000           # compose only
+APP_DOMAIN=             # compose only, for the Caddy https profile
+DATABASE_URL=           # optional external Postgres
+DATABASE_SSL=false
 ```
-
-## Testing Strategy
-
-**Primary Test Script**: `node test-email.js`
-- Tests direct API calls
-- Validates Resend SDK compatibility  
-- Checks email log functionality
-- Sends actual test emails
-
-**Quick Test**: `./test-curl.sh`
-- Fast cURL-based validation
-- Useful for CI/CD integration
-
-## Database Migration Notes
-
-The project recently migrated from Supabase to direct PostgreSQL:
-- Connection pooling replaces Supabase client
-- Row Level Security removed (handled in application layer)
-- Direct SQL queries replace Supabase query builder
-- Types maintained for compatibility
-
-## Domain Setup Workflow
-
-1. **Add Domain**: POST `/api/domains` with domain name
-2. **DNS Records**: Auto-created (DO) or manual setup required
-3. **SES Verification**: Automatic domain verification with AWS
-4. **DKIM Setup**: Automatic DKIM key generation and DNS records
-5. **API Key Creation**: Generate keys for verified domains only
-6. **Email Sending**: Use API keys with Resend-compatible endpoints
-
-## Common Development Tasks
-
-### Adding New API Endpoints
-1. Create route file in `/src/app/api/[path]/route.ts`
-2. Add business logic to appropriate `/src/lib/` file
-3. Apply authentication middleware if needed
-4. Update types in `/src/lib/database.ts` if database changes required
-
-### Database Schema Changes
-1. Update `/database.sql` with new schema
-2. Update TypeScript interfaces in `/src/lib/database.ts`
-3. Test with `node test-email.js`
-
-### Testing Email Functionality
-Always test with real email addresses and verify:
-- Email delivery via AWS SES console
-- Webhook processing for delivery events
-- Email logs in dashboard
-- API key authentication
-
-## Security Considerations
-
-- All passwords are bcrypt hashed (rounds: 12)
-- API keys are hashed with identifiable prefixes
-- JWT tokens for dashboard authentication
-- Direct database queries use parameterized statements
-- Environment variables for all sensitive data
-- CORS handling for cross-origin requests
-
-## Production Deployment
-
-The application supports multiple deployment methods:
-- **Vercel**: Serverless deployment (recommended)
-- **Docker**: Containerized deployment
-- **Traditional**: Node.js server deployment
-
-Key production requirements:
-- PostgreSQL database (hosted)
-- AWS SES out of sandbox mode
-- SSL certificates for HTTPS
-- Environment variables configured
-- Database schema initialized

@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # FreeResend Email Testing with cURL
-# Replace these variables with your actual values
+# Usage: FRS_API_KEY=frs_... FROM_EMAIL=hello@yourdomain.com TO_EMAIL=you@example.com ./test-curl.sh
 
-API_KEY=""  # Get from FreeResend API Keys tab
-FROM_EMAIL="info@freeresend.com"  # Your verified domain email
-TO_EMAIL="eibrahim@gmail.com"  # Your email address
-BASE_URL="http://localhost:3000"
+API_KEY="${FRS_API_KEY:?Set FRS_API_KEY (from the API Keys tab)}"
+FROM_EMAIL="${FROM_EMAIL:?Set FROM_EMAIL (an address on a verified domain)}"
+TO_EMAIL="${TO_EMAIL:?Set TO_EMAIL}"
+BASE_URL="${FRS_URL:-http://localhost:3000}"
 
 echo "🚀 Testing FreeResend with cURL"
 echo "================================"

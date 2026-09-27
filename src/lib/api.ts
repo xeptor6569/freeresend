@@ -1,5 +1,6 @@
-const API_BASE =
-  process.env.NODE_ENV === "development" ? "http://localhost:3000/api" : "/api";
+import type { EmailDnsAssessment } from "./email-dns-readiness";
+
+const API_BASE = "/api";
 
 class ApiClient {
   private token: string | null = null;
@@ -141,6 +142,17 @@ class ApiClient {
 
   async getEmail(id: string) {
     return this.request(`/emails/${id}`);
+  }
+
+  // Tools
+  async checkEmailDns(
+    domain: string,
+    dkimSelector: string
+  ): Promise<EmailDnsAssessment> {
+    return this.request("/tools/email-dns-checker", {
+      method: "POST",
+      body: JSON.stringify({ domain, dkimSelector }),
+    });
   }
 }
 

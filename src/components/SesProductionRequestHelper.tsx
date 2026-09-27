@@ -1,8 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Check, Clipboard, ExternalLink, FileText, ShieldCheck } from "lucide-react";
-import { deploymentReview, launchKit } from "@/config/launch-kit";
+import { Check, Clipboard, FileText } from "lucide-react";
 import { buildSesProductionRequest, type SesProductionRequestInput } from "@/lib/ses-production-request";
 
 const initialInput: SesProductionRequestInput = {
@@ -42,17 +41,17 @@ export default function SesProductionRequestHelper() {
   }
 
   return (
-    <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <section>
       <div className="grid gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
         <form onSubmit={handleSubmit} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700">
             <FileText className="h-6 w-6" />
           </div>
-          <h1 className="text-3xl font-bold leading-tight text-gray-900 sm:text-4xl">
+          <h2 className="text-2xl font-bold leading-tight text-gray-900">
             SES production request helper
-          </h1>
+          </h2>
           <p className="mt-4 leading-7 text-gray-600">
-            Draft the Amazon SES production access request from public rollout details before a FreeResend launch.
+            Draft the Amazon SES production access request (leaving the sandbox) from public rollout details.
           </p>
 
           <div className="mt-7 grid gap-4">
@@ -157,39 +156,6 @@ export default function SesProductionRequestHelper() {
               <span>Copy request body</span>
             </button>
           </article>
-
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
-            <div className="flex gap-3">
-              <ShieldCheck className="mt-1 h-5 w-5 flex-none text-emerald-700" />
-              <div>
-                <h2 className="text-xl font-bold text-emerald-950">Want the rollout checked first?</h2>
-                <p className="mt-2 leading-7 text-emerald-900">
-                  The {deploymentReview.price} Deployment Review covers SES sandbox status, region choice, DNS, webhook
-                  handling, and smoke-test gaps before you send production traffic.
-                </p>
-              </div>
-            </div>
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-              <a
-                href={deploymentReview.checkoutUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-3 font-semibold text-white transition-colors hover:bg-emerald-700"
-              >
-                <span>Book deployment review</span>
-                <ExternalLink className="h-4 w-4" />
-              </a>
-              <a
-                href={launchKit.checkoutUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-white px-5 py-3 font-semibold text-emerald-800 transition-colors hover:bg-emerald-100"
-              >
-                <span>Buy launch kit</span>
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            </div>
-          </div>
         </div>
       </div>
     </section>

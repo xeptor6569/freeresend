@@ -25,11 +25,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
-
-# vercel
-.vercel
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -41,8 +39,3 @@ next-env.d.ts
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-
-# secrets and sensitive files
-docs/marketing/*
-k8s/secret.yaml
-*.secret.yaml

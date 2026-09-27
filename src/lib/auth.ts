@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { query } from "./database";
 import type { User } from "./database";
 
-const JWT_SECRET = process.env.NEXTAUTH_SECRET!;
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 export interface AuthUser {
   id: string;
@@ -121,32 +121,35 @@ export async function getUserById(id: string): Promise<AuthUser | null> {
   }
 }
 
-export async function initializeDefaultUser(): Promise<void> {
+// ADMIN_PASSWORD is the source of truth: changing it and restarting resets the password.
+export async function ensureAdminUser(): Promise<void> {
   const adminEmail = process.env.ADMIN_EMAIL;
   const adminPassword = process.env.ADMIN_PASSWORD;
 
   if (!adminEmail || !adminPassword) {
     console.warn(
-      "ADMIN_EMAIL and ADMIN_PASSWORD not set. Skipping default user creation."
+      "ADMIN_EMAIL and ADMIN_PASSWORD not set. Skipping admin user setup."
     );
     return;
   }
 
-  try {
-    // Check if user already exists
-    const result = await query(
-      "SELECT id FROM users WHERE email = $1 LIMIT 1",
-      [adminEmail]
-    );
+  const result = await query(
+    "SELECT id, password_hash FROM users WHERE email = $1 LIMIT 1",
+    [adminEmail]
+  );
 
-    if (result.rows.length > 0) {
-      console.log("Default admin user already exists");
-      return;
-    }
-
+  if (result.rows.length === 0) {
     await createUser(adminEmail, adminPassword, "Admin");
-    console.log("Default admin user created successfully");
-  } catch (error) {
-    console.error("Failed to create default admin user:", error);
+    console.log(`Created admin user ${adminEmail}`);
+    return;
+  }
+
+  const user = result.rows[0];
+  if (!(await verifyPassword(adminPassword, user.password_hash))) {
+    await query("UPDATE users SET password_hash = $1 WHERE id = $2", [
+      await hashPassword(adminPassword),
+      user.id,
+    ]);
+    console.log(`Updated password for admin user ${adminEmail}`);
   }
 }

@@ -1,27 +1,61 @@
-version: "3.8"
+name: freeresend
 
 services:
-  freeresend:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-    env_file:
-      - .env.local
+  postgres:
+    image: postgres:16-alpine
     restart: unless-stopped
+    environment:
+      POSTGRES_DB: freeresend
+      POSTGRES_USER: freeresend
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set. Run setup.ps1 or setup.sh first.}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U freeresend -d freeresend"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
-  # Optional: PostgreSQL database if not using Supabase
-  # postgres:
-  #   image: postgres:15-alpine
-  #   environment:
-  #     POSTGRES_DB: freeresend
-  #     POSTGRES_USER: freeresend
-  #     POSTGRES_PASSWORD: your-password
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #     - ./database.sql:/docker-entrypoint-initdb.d/init.sql
-  #   ports:
-  #     - "5432:5432"
-# volumes:
-#   postgres_data:
+  app:
+    build: .
+    image: freeresend:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: freeresend
+      PGUSER: freeresend
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is not set. Run setup.ps1 or setup.sh first.}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL is not set.}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is not set.}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      DO_API_TOKEN: ${DO_API_TOKEN:-}
+
+  # Optional HTTPS with automatic Let's Encrypt certificates:
+  #   docker compose --profile https up -d
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: caddy reverse-proxy --from ${APP_DOMAIN:-localhost} --to app:3000
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+
+volumes:
+  postgres_data:
+  caddy_data:

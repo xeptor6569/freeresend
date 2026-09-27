@@ -1,8 +1,8 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthContext";
-import LandingPage from "@/components/LandingPage";
 import Dashboard from "@/components/Dashboard";
+import LoginForm from "@/components/LoginForm";
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -18,11 +18,5 @@ export default function Home() {
     );
   }
 
-  // Show dashboard if user is authenticated
-  if (user) {
-    return <Dashboard />;
-  }
-
-  // Show landing page for unauthenticated users
-  return <LandingPage />;
+  return user ? <Dashboard /> : <LoginForm />;
 }
